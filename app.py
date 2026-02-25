@@ -4,18 +4,22 @@ import streamlit.components.v1 as components
 import re
 
 # ==========================================
-# 1. 初始化两套大模型客户端 (完全解耦架构)
+# 1. 初始化两套大模型客户端 (安全架构：从云端环境变量读取)
+# ==========================================
 # --- 🧠 大脑：DeepSeek (负责写代码) ---
-DS_API_KEY = "sk-8269c6bca93e4c57a4d4f0e3494550dc" # 👉 填入 DeepSeek Key
-ds_client = OpenAI(api_key=DS_API_KEY, base_url="https://api.deepseek.com")
+try:
+    DS_API_KEY = st.secrets["DEEPSEEK_API_KEY"]
+    ds_client = OpenAI(api_key=DS_API_KEY, base_url="https://api.deepseek.com")
 
-# --- 👂 耳朵：Groq (提供免费且极速的 Whisper 语音识别) ---
-GROQ_API_KEY = "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" # 👉 填入刚才申请的以 gsk_ 开头的 Key
-# Groq 的接口完全兼容 OpenAI SDK，只需换个 Base URL 即可
-whisper_client = OpenAI(api_key=GROQ_API_KEY, base_url="https://api.groq.com/openai/v1") 
+    # --- 👂 耳朵：Groq (负责听懂语音) ---
+    GROQ_API_KEY = st.secrets["GROQ_API_KEY"]
+    whisper_client = OpenAI(api_key=GROQ_API_KEY, base_url="https://api.groq.com/openai/v1") 
+except KeyError as e:
+    st.error(f"⚠️ 缺少 API Key 配置: 找不到 {e}。请在 Streamlit Cloud 的 Advanced Settings -> Secrets 中配置。")
+    st.stop()
 
 st.set_page_config(page_title="PM原型生成器 V4.2", layout="wide", initial_sidebar_state="collapsed")
-st.title("🚀 需求秒转 Demo 工具 (V4.2 极速语音版)")
+st.title("🚀 需求秒转 Demo 工具 (V4.2 极速语音 + 安全版)")
 
 # ==========================================
 # 🔌 核心模块：音频转文字
@@ -113,3 +117,4 @@ with col2:
         st.download_button("⬇️ 下载 HTML", st.session_state.html_code, "demo_prototype.html", "text/html")
     else:
         st.info("👈 请在左侧输入需求或直接录音。")
+
