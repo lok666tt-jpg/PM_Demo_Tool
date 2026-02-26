@@ -2,26 +2,26 @@ import streamlit as st
 from openai import OpenAI
 import streamlit.components.v1 as components
 import re
+import time  # 新增：用于处理网络重试的等待时间
 
 # ==========================================
 # 1. 初始化大模型客户端 (安全架构)
 # ==========================================
 try:
     DS_API_KEY = st.secrets["DEEPSEEK_API_KEY"]
-    ds_client = OpenAI(api_key=DS_API_KEY, base_url="[https://api.deepseek.com](https://api.deepseek.com)")
+    ds_client = OpenAI(api_key=DS_API_KEY, base_url="https://api.deepseek.com")
 
     GROQ_API_KEY = st.secrets["GROQ_API_KEY"]
-    whisper_client = OpenAI(api_key=GROQ_API_KEY, base_url="[https://api.groq.com/openai/v1](https://api.groq.com/openai/v1)") 
+    whisper_client = OpenAI(api_key=GROQ_API_KEY, base_url="https://api.groq.com/openai/v1") 
 except KeyError as e:
     st.error(f"⚠️ 缺少 API Key 配置: 找不到 {e}。请在 Streamlit Cloud 的 Advanced Settings -> Secrets 中配置。")
     st.stop()
 
-st.set_page_config(page_title="PM原型生成器 V4.9", layout="wide", initial_sidebar_state="expanded")
+st.set_page_config(page_title="PM原型生成器 V5.0", layout="wide", initial_sidebar_state="expanded")
 
 # ==========================================
 # 2. 全局状态管理 & 侧边栏 
 # ==========================================
-# 初始化所有需要的状态变量
 if "html_code" not in st.session_state:
     st.session_state.html_code = ""
 if "messages" not in st.session_state:
@@ -51,11 +51,11 @@ system_prompt = """你是一位世界顶尖的 B 端前端交互专家，专注�
 <html>
 <head>
   <meta charset="UTF-8">
-  <script src="[https://unpkg.com/vue@3/dist/vue.global.js](https://unpkg.com/vue@3/dist/vue.global.js)"></script>
-  <link rel="stylesheet" href="[https://unpkg.com/element-plus/dist/index.css](https://unpkg.com/element-plus/dist/index.css)" />
-  <script src="[https://unpkg.com/element-plus](https://unpkg.com/element-plus)"></script>
-  <script src="[https://unpkg.com/@element-plus/icons-vue](https://unpkg.com/@element-plus/icons-vue)"></script>
-  <script src="[https://cdn.jsdelivr.net/npm/echarts@5.5.0/dist/echarts.min.js](https://cdn.jsdelivr.net/npm/echarts@5.5.0/dist/echarts.min.js)"></script>
+  <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
+  <link rel="stylesheet" href="https://unpkg.com/element-plus/dist/index.css" />
+  <script src="https://unpkg.com/element-plus"></script>
+  <script src="https://unpkg.com/@element-plus/icons-vue"></script>
+  <script src="https://cdn.jsdelivr.net/npm/echarts@5.5.0/dist/echarts.min.js"></script>
   <style>
     /* 在这里写自定义 CSS，例如全屏背景、登录框居中等 */
     body { margin: 0; padding: 0; background-color: #f0f2f5; font-family: sans-serif; }
@@ -96,7 +96,6 @@ system_prompt = """你是一位世界顶尖的 B 端前端交互专家，专注�
 if len(st.session_state.messages) == 0:
     st.session_state.messages = [{"role": "system", "content": system_prompt}]
 
-# 历史记录删除回调函数
 def delete_history_item(idx):
     if idx < len(st.session_state.messages) and st.session_state.messages[idx]["role"] == "user":
         st.session_state.messages.pop(idx)
@@ -127,24 +126,30 @@ with st.sidebar:
     if not has_history:
         st.caption("暂无记录")
 
-st.title("🚀 需求秒转 Demo 工具 (V4.9 极致体验版)")
+st.title("🚀 需求秒转 Demo 工具 (V5.0 终极抗压版)")
 
 # ==========================================
-# 4. 核心接口：音频转文字
+# 4. 核心接口：音频转文字 (加入强大的自动重试机制)
 # ==========================================
 def transcribe_audio_to_text(audio_file):
-    try:
-        audio_bytes = audio_file.getvalue()
-        transcript = whisper_client.audio.transcriptions.create(
-            model="whisper-large-v3", 
-            file=("audio.wav", audio_bytes), 
-            response_format="text"
-        )
-        if hasattr(transcript, 'text'):
-            return transcript.text
-        return str(transcript)
-    except Exception as e:
-        return f"【语音解析失败】: {str(e)}"
+    audio_bytes = audio_file.getvalue()
+    max_retries = 3 # 最大重试次数
+    
+    for attempt in range(max_retries):
+        try:
+            transcript = whisper_client.audio.transcriptions.create(
+                model="whisper-large-v3", 
+                file=("audio.wav", audio_bytes), 
+                response_format="text"
+            )
+            if hasattr(transcript, 'text'):
+                return transcript.text
+            return str(transcript)
+        except Exception as e:
+            if attempt < max_retries - 1:
+                time.sleep(2) # 失败后休息 2 秒，再次发起请求
+                continue
+            return f"【语音解析失败】: 免费接口当前排队人数过多，请再次点击提取按钮。详细报错: {str(e)}"
 
 # ==========================================
 # 5. 界面主布局：左右分栏
@@ -162,7 +167,7 @@ with col1:
     
     if target_audio:
         if st.button("🔄 第1步：提取语音为文本"):
-            with st.spinner("极速引擎正在提取语音..."):
+            with st.spinner("极速引擎正在提取语音 (若遇网络抖动会自动重试)..."):
                 transcribed_text = transcribe_audio_to_text(target_audio)
                 if "【语音解析失败】" in transcribed_text:
                     st.error(transcribed_text)
@@ -235,6 +240,7 @@ with col2:
         st.download_button("⬇️ 导出完整 HTML 源文件", st.session_state.html_code, "demo_prototype.html", "text/html")
     else:
         st.info("👈 等待接收需求指令... (AI 响应后，预览画面将在此处直接渲染)")
+
 
 
 
