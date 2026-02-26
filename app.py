@@ -4,23 +4,24 @@ import streamlit.components.v1 as components
 import re
 
 # ==========================================
-# 1. 初始化两套大模型客户端 (安全架构)
+# 1. 初始化大模型客户端 (安全架构)
 # ==========================================
 try:
     DS_API_KEY = st.secrets["DEEPSEEK_API_KEY"]
-    ds_client = OpenAI(api_key=DS_API_KEY, base_url="https://api.deepseek.com")
+    ds_client = OpenAI(api_key=DS_API_KEY, base_url="[https://api.deepseek.com](https://api.deepseek.com)")
 
     GROQ_API_KEY = st.secrets["GROQ_API_KEY"]
-    whisper_client = OpenAI(api_key=GROQ_API_KEY, base_url="https://api.groq.com/openai/v1") 
+    whisper_client = OpenAI(api_key=GROQ_API_KEY, base_url="[https://api.groq.com/openai/v1](https://api.groq.com/openai/v1)") 
 except KeyError as e:
-    st.error(f"⚠️ 缺少 API Key 配置: 找不到 {e}。请在 Streamlit Cloud 中配置。")
+    st.error(f"⚠️ 缺少 API Key 配置: 找不到 {e}。请在 Streamlit Cloud 的 Advanced Settings -> Secrets 中配置。")
     st.stop()
 
-st.set_page_config(page_title="PM原型生成器 V4.7", layout="wide", initial_sidebar_state="expanded")
+st.set_page_config(page_title="PM原型生成器 V4.9", layout="wide", initial_sidebar_state="expanded")
 
 # ==========================================
 # 2. 全局状态管理 & 侧边栏 
 # ==========================================
+# 初始化所有需要的状态变量
 if "html_code" not in st.session_state:
     st.session_state.html_code = ""
 if "messages" not in st.session_state:
@@ -29,46 +30,91 @@ if "draft_text_input" not in st.session_state:
     st.session_state.draft_text_input = ""
 if "uploader_key" not in st.session_state:
     st.session_state.uploader_key = 0
+if "need_clear_draft" not in st.session_state:
+    st.session_state.need_clear_draft = False
+if "show_success_effect" not in st.session_state:
+    st.session_state.show_success_effect = False
 
-# 【优化2】：史诗级增强的 System Prompt，追求高保真 B 端风格
-system_prompt = """你是一位世界顶尖的 B 端前端交互专家，专注于使用 Vue3 + Element Plus 构建高保真、专业级的管理后台界面原型。
+# 延迟清空逻辑：在画界面前安全地清空草稿箱
+if st.session_state.need_clear_draft:
+    st.session_state.draft_text_input = ""
+    st.session_state.need_clear_draft = False
 
-你的目标不仅仅是实现功能，更是要创造出布局合理、视觉美观、数据真实的页面，可以直接用于向客户进行专业演示。
+# 【底层架构锁定模板】防白屏、防乱码、支持图表与页面模拟切换
+system_prompt = """你是一位世界顶尖的 B 端前端交互专家，专注于使用 Vue3 + Element Plus 构建高保真原型。
 
-【严格要求】：
-1.  **技术栈**：必须使用 Vue 3 (推荐 `<script setup>`) 和 Element Plus CDN。
-2.  **专业布局**：
-    * 拒绝简单的组件堆砌。必须使用标准的 B 端布局结构，例如用 `<el-card shadow="never">` 来包裹主要内容区域，提供干净的白色背景和细腻的边框。
-    * 页面要有合理的内边距 (Padding)，通常主内容区需要 20px 的 padding，不要让组件紧贴浏览器边缘。
-    * 使用 `<el-row>` 和 `<el-col>` 进行合理的栅格布局。
-3.  **高保真组件与数据**：
-    * **表格**：如果需要列表，必须使用 `<el-table>`，并包含真实的列（如状态标签 `<el-tag>`、操作按钮组、真实的日期时间），底部必须配一个静态的 `<el-pagination>` 分页器。
-    * **表单**：表单项要有清晰的 Label，合理的输入框宽度，必要时使用行内表单布局。
-    * **数据**：填充极其真实的 Mock 数据（例如：真实的人名、看起来像样的订单号、'已完成/处理中'的状态、'2023-10-27 14:30' 格式的时间），绝不允许出现 "test", "abc" 这种敷衍数据。
-4.  **微交互**：为关键按钮（如“保存”、“提交”、“搜索”）添加简单的 `@click` 事件，弹出 `ElMessage.success('操作成功，演示模式数据未保存')` 之类的提示，让 Demo 活起来。
-5.  **输出格式**：只输出最终的 HTML 文件内容（以 `<!DOCTYPE html>` 开头），不要包含任何 markdown 标记（如 ```html）。"""
+【极其重要的技术架构限制（防报错必读）】：
+最终代码是在浏览器直接打开的单文件 HTML。绝对禁止使用 <script setup> 语法！
+必须严格套用以下模板骨架，填入你的业务代码：
+
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <script src="[https://unpkg.com/vue@3/dist/vue.global.js](https://unpkg.com/vue@3/dist/vue.global.js)"></script>
+  <link rel="stylesheet" href="[https://unpkg.com/element-plus/dist/index.css](https://unpkg.com/element-plus/dist/index.css)" />
+  <script src="[https://unpkg.com/element-plus](https://unpkg.com/element-plus)"></script>
+  <script src="[https://unpkg.com/@element-plus/icons-vue](https://unpkg.com/@element-plus/icons-vue)"></script>
+  <script src="[https://cdn.jsdelivr.net/npm/echarts@5.5.0/dist/echarts.min.js](https://cdn.jsdelivr.net/npm/echarts@5.5.0/dist/echarts.min.js)"></script>
+  <style>
+    /* 在这里写自定义 CSS，例如全屏背景、登录框居中等 */
+    body { margin: 0; padding: 0; background-color: #f0f2f5; font-family: sans-serif; }
+  </style>
+</head>
+<body>
+  <div id="app">
+    <template v-if="currentPage === 'login'">
+        </template>
+    
+    <template v-if="currentPage === 'home'">
+        </template>
+  </div>
+  
+  <script>
+    const { createApp, ref, reactive, onMounted, nextTick } = Vue;
+    const app = createApp({
+      setup() {
+        const currentPage = ref('login'); // 状态驱动页面跳转
+        // 你的响应式数据和逻辑写在这里
+        
+        return { currentPage, /* 返回所有模板中使用的变量和方法 */ };
+      }
+    });
+    app.use(ElementPlus);
+    app.mount("#app");
+  </script>
+</body>
+</html>
+
+【核心要求】：
+1. 需求还原度100%：用户要求的输入框、按钮等必须全部画出来！
+2. 页面跳转模拟：在一个文件内，用 v-if 结合按钮点击事件改变 currentPage 来模拟跳转。
+3. B端高保真：登录页要有好看的居中卡片（带阴影）；后台首页要有侧边栏导航和顶部 Header，内容区用 Echarts 绘制图表。
+4. 仅输出最终纯净 HTML 代码，不要附加任何 markdown 标记包裹！不要说任何废话！
+"""
 
 if len(st.session_state.messages) == 0:
     st.session_state.messages = [{"role": "system", "content": system_prompt}]
 
+# 历史记录删除回调函数
 def delete_history_item(idx):
     if idx < len(st.session_state.messages) and st.session_state.messages[idx]["role"] == "user":
         st.session_state.messages.pop(idx)
         if idx < len(st.session_state.messages) and st.session_state.messages[idx]["role"] == "assistant":
             st.session_state.messages.pop(idx)
 
+# ==========================================
+# 3. 侧边栏构建
+# ==========================================
 with st.sidebar:
     st.header("⚙️ 任务控制台")
-    
-    # 【优化1】：此按钮是唯一能清空文本框的地方
     if st.button("🧹 清空当前录音与输入", use_container_width=True):
-        st.session_state.draft_text_input = "" # 手动清空文本
-        st.session_state.uploader_key += 1 # 重置录音控件
+        st.session_state.draft_text_input = ""
+        st.session_state.uploader_key += 1 
         st.rerun()
         
     st.markdown("---")
     st.subheader("📝 历史需求管理")
-    
     has_history = False
     for i, msg in enumerate(st.session_state.messages):
         if msg["role"] == "user":
@@ -78,14 +124,13 @@ with st.sidebar:
                 st.info(msg["content"][:30] + "..." if len(msg["content"]) > 30 else msg["content"])
             with col_btn:
                 st.button("❌", key=f"del_{i}", on_click=delete_history_item, args=(i,), help="删除此条需求")
-                
     if not has_history:
         st.caption("暂无记录")
 
-st.title("🚀 需求秒转 Demo 工具 (V4.7 高保真专业版)")
+st.title("🚀 需求秒转 Demo 工具 (V4.9 极致体验版)")
 
 # ==========================================
-# 3. 核心接口：音频转文字
+# 4. 核心接口：音频转文字
 # ==========================================
 def transcribe_audio_to_text(audio_file):
     try:
@@ -102,7 +147,7 @@ def transcribe_audio_to_text(audio_file):
         return f"【语音解析失败】: {str(e)}"
 
 # ==========================================
-# 4. 界面布局：左右分栏
+# 5. 界面主布局：左右分栏
 # ==========================================
 col1, col2 = st.columns([1, 1.2])
 
@@ -142,7 +187,7 @@ with col1:
             final_requirement = st.session_state.draft_text_input
             st.session_state.messages.append({"role": "user", "content": final_requirement})
             
-            with st.spinner("AI 正在构建专业级前端组件中 (约需15-25秒)..."):
+            with st.spinner("AI 正在构建专业级前端组件中 (约需15-30秒)..."):
                 try:
                     response = ds_client.chat.completions.create(
                         model="deepseek-chat",
@@ -151,29 +196,45 @@ with col1:
                     )
                     ai_result = response.choices[0].message.content
                     
-                    match = re.search(r'```(?:html|vue)?(.*?)```', ai_result, re.DOTALL | re.IGNORECASE)
-                    if match:
-                        new_html = match.group(1).strip()
+                    # 【史诗级净化器】：剥离所有废话，提取纯净 HTML
+                    html_match = re.search(r'(<!DOCTYPE html>.*</html>|<html.*</html>)', ai_result, re.DOTALL | re.IGNORECASE)
+                    if html_match:
+                        new_html = html_match.group(1).strip()
                     else:
-                        new_html = ai_result.replace("```html", "").replace("```", "").strip()
+                        new_html = ai_result.replace("```html", "").replace("```vue", "").replace("```", "").strip()
                     
                     st.session_state.html_code = new_html
                     st.session_state.messages.append({"role": "assistant", "content": "已生成代码"})
                     
-                    # 【优化1】：生成成功后，不再自动清空文本框！
-                    # 只重置录音控件，方便下一次录音
+                    # 触发状态：清空草稿、重置麦克风、开启撒花特效
+                    st.session_state.need_clear_draft = True
                     st.session_state.uploader_key += 1 
+                    st.session_state.show_success_effect = True
+                    
                     st.rerun()
                 except Exception as e:
                     st.error(f"代码生成出错: {e}")
 
 with col2:
     st.subheader("🖥️ 3. 交互 Demo")
+    
+    # 执行撒花特效
+    if st.session_state.get("show_success_effect", False):
+        st.balloons()
+        st.session_state.show_success_effect = False # 阅后即焚
+
     if st.session_state.html_code:
-        components.html(st.session_state.html_code, height=750, scrolling=True)
-        st.download_button("⬇️ 下载 HTML", st.session_state.html_code, "demo_prototype.html", "text/html")
+        # 友好的成功提示语
+        st.success("🎉 **生成完毕！** 代码已注入右侧面板，请直接在下方白框内点击交互。")
+        st.caption("👇 若需要交付给研发或发给客户，可点击最下方的下载按钮。")
+        
+        # 渲染核心界面
+        components.html(st.session_state.html_code, height=850, scrolling=True)
+        
+        st.markdown("---")
+        st.download_button("⬇️ 导出完整 HTML 源文件", st.session_state.html_code, "demo_prototype.html", "text/html")
     else:
-        st.info("👈 等待接收需求指令...")
+        st.info("👈 等待接收需求指令... (AI 响应后，预览画面将在此处直接渲染)")
 
 
 
