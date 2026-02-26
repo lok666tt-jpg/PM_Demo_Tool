@@ -8,10 +8,10 @@ import re
 # ==========================================
 try:
     DS_API_KEY = st.secrets["DEEPSEEK_API_KEY"]
-    ds_client = OpenAI(api_key=DS_API_KEY, base_url="[https://api.deepseek.com](https://api.deepseek.com)")
+    ds_client = OpenAI(api_key=DS_API_KEY, base_url="https://api.deepseek.com")
 
     GROQ_API_KEY = st.secrets["GROQ_API_KEY"]
-    whisper_client = OpenAI(api_key=GROQ_API_KEY, base_url="[https://api.groq.com/openai/v1](https://api.groq.com/openai/v1)") 
+    whisper_client = OpenAI(api_key=GROQ_API_KEY, base_url="https://api.groq.com/openai/v1") 
 except KeyError as e:
     st.error(f"⚠️ 缺少 API Key 配置: 找不到 {e}。请在 Streamlit Cloud 中配置。")
     st.stop()
@@ -19,14 +19,14 @@ except KeyError as e:
 st.set_page_config(page_title="PM原型生成器 V4.3", layout="wide", initial_sidebar_state="expanded")
 
 # ==========================================
-# 2. 全局状态管理 & 侧边栏 (解决你的第二个痛点)
+# 2. 全局状态管理 & 侧边栏 
 # ==========================================
 # 初始化各个状态
 if "html_code" not in st.session_state:
     st.session_state.html_code = ""
 if "messages" not in st.session_state:
     st.session_state.messages = []
-if "draft_text" not in st.session_state: # 新增：用于暂存转录后的文本
+if "draft_text" not in st.session_state: # 用于暂存转录后的文本
     st.session_state.draft_text = ""
 
 system_prompt = """你是一个资深的 B端产品经理兼前端架构师。
@@ -64,14 +64,16 @@ with st.sidebar:
 st.title("🚀 需求秒转 Demo 工具 (V4.3 人机协同版)")
 
 # ==========================================
-# 3. 核心接口：音频转文字
+# 3. 核心接口：音频转文字 (已修复 Connection Error)
 # ==========================================
 def transcribe_audio_to_text(audio_file):
     try:
-        audio_file.name = "audio.wav" 
+        # 提取纯净的二进制数据，使用 (文件名, 字节流) 元组格式发送，彻底解决传输断连问题
+        audio_bytes = audio_file.getvalue()
+        
         transcript = whisper_client.audio.transcriptions.create(
             model="whisper-large-v3", 
-            file=audio_file,
+            file=("audio.wav", audio_bytes), 
             response_format="text"
         )
         return transcript
@@ -157,5 +159,6 @@ with col2:
         st.download_button("⬇️ 下载 HTML", st.session_state.html_code, "demo_prototype.html", "text/html")
     else:
         st.info("👈 等待接收需求指令...")
+
 
 
