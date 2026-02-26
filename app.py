@@ -16,7 +16,7 @@ except KeyError as e:
     st.error(f"⚠️ 缺少 API Key 配置: 找不到 {e}。请在 Streamlit Cloud 中配置。")
     st.stop()
 
-st.set_page_config(page_title="PM原型生成器 V4.6", layout="wide", initial_sidebar_state="expanded")
+st.set_page_config(page_title="PM原型生成器 V4.7", layout="wide", initial_sidebar_state="expanded")
 
 # ==========================================
 # 2. 全局状态管理 & 侧边栏 
@@ -30,22 +30,23 @@ if "draft_text_input" not in st.session_state:
 if "uploader_key" not in st.session_state:
     st.session_state.uploader_key = 0
 
-# 【核心修复】：新增一个用于延迟清空的标志位
-if "need_clear_draft" not in st.session_state:
-    st.session_state.need_clear_draft = False
+# 【优化2】：史诗级增强的 System Prompt，追求高保真 B 端风格
+system_prompt = """你是一位世界顶尖的 B 端前端交互专家，专注于使用 Vue3 + Element Plus 构建高保真、专业级的管理后台界面原型。
 
-# 【核心修复】：在画任何界面之前，先检查小旗子，安全地执行清空操作！
-if st.session_state.need_clear_draft:
-    st.session_state.draft_text_input = ""
-    st.session_state.need_clear_draft = False
+你的目标不仅仅是实现功能，更是要创造出布局合理、视觉美观、数据真实的页面，可以直接用于向客户进行专业演示。
 
-system_prompt = """你是一个资深的 B端产品经理兼前端架构师。
-你的任务是根据用户的需求，生成 Vue3 + Element Plus 的单文件 HTML 代码。
-【要求】：
-- 必须引入 Vue3 和 Element Plus 的 CDN。
-- 使用 Mock 数据写死在前端。
-- 只输出最终的 HTML 代码，不要输出任何解释说明。
-- 绝对不要输出 ```html 开头的标记，直接输出 <html 标签开头的纯代码！"""
+【严格要求】：
+1.  **技术栈**：必须使用 Vue 3 (推荐 `<script setup>`) 和 Element Plus CDN。
+2.  **专业布局**：
+    * 拒绝简单的组件堆砌。必须使用标准的 B 端布局结构，例如用 `<el-card shadow="never">` 来包裹主要内容区域，提供干净的白色背景和细腻的边框。
+    * 页面要有合理的内边距 (Padding)，通常主内容区需要 20px 的 padding，不要让组件紧贴浏览器边缘。
+    * 使用 `<el-row>` 和 `<el-col>` 进行合理的栅格布局。
+3.  **高保真组件与数据**：
+    * **表格**：如果需要列表，必须使用 `<el-table>`，并包含真实的列（如状态标签 `<el-tag>`、操作按钮组、真实的日期时间），底部必须配一个静态的 `<el-pagination>` 分页器。
+    * **表单**：表单项要有清晰的 Label，合理的输入框宽度，必要时使用行内表单布局。
+    * **数据**：填充极其真实的 Mock 数据（例如：真实的人名、看起来像样的订单号、'已完成/处理中'的状态、'2023-10-27 14:30' 格式的时间），绝不允许出现 "test", "abc" 这种敷衍数据。
+4.  **微交互**：为关键按钮（如“保存”、“提交”、“搜索”）添加简单的 `@click` 事件，弹出 `ElMessage.success('操作成功，演示模式数据未保存')` 之类的提示，让 Demo 活起来。
+5.  **输出格式**：只输出最终的 HTML 文件内容（以 `<!DOCTYPE html>` 开头），不要包含任何 markdown 标记（如 ```html）。"""
 
 if len(st.session_state.messages) == 0:
     st.session_state.messages = [{"role": "system", "content": system_prompt}]
@@ -56,13 +57,13 @@ def delete_history_item(idx):
         if idx < len(st.session_state.messages) and st.session_state.messages[idx]["role"] == "assistant":
             st.session_state.messages.pop(idx)
 
-# 侧边栏：历史记录与独立管理
 with st.sidebar:
     st.header("⚙️ 任务控制台")
     
+    # 【优化1】：此按钮是唯一能清空文本框的地方
     if st.button("🧹 清空当前录音与输入", use_container_width=True):
-        st.session_state.draft_text_input = ""
-        st.session_state.uploader_key += 1 
+        st.session_state.draft_text_input = "" # 手动清空文本
+        st.session_state.uploader_key += 1 # 重置录音控件
         st.rerun()
         
     st.markdown("---")
@@ -81,7 +82,7 @@ with st.sidebar:
     if not has_history:
         st.caption("暂无记录")
 
-st.title("🚀 需求秒转 Demo 工具 (V4.6 绝对稳定版)")
+st.title("🚀 需求秒转 Demo 工具 (V4.7 高保真专业版)")
 
 # ==========================================
 # 3. 核心接口：音频转文字
@@ -141,7 +142,7 @@ with col1:
             final_requirement = st.session_state.draft_text_input
             st.session_state.messages.append({"role": "user", "content": final_requirement})
             
-            with st.spinner("AI 正在构建前端组件中 (约需10-20秒)..."):
+            with st.spinner("AI 正在构建专业级前端组件中 (约需15-25秒)..."):
                 try:
                     response = ds_client.chat.completions.create(
                         model="deepseek-chat",
@@ -159,20 +160,15 @@ with col1:
                     st.session_state.html_code = new_html
                     st.session_state.messages.append({"role": "assistant", "content": "已生成代码"})
                     
-                    # 【核心修复】：竖起小旗子，不要立刻清空文本框，交给下一轮开头去清空
-                    st.session_state.need_clear_draft = True
+                    # 【优化1】：生成成功后，不再自动清空文本框！
+                    # 只重置录音控件，方便下一次录音
                     st.session_state.uploader_key += 1 
                     st.rerun()
                 except Exception as e:
                     st.error(f"代码生成出错: {e}")
 
 with col2:
-    st.subheader("🖥️ 3. 交互 Demo")
-    if st.session_state.html_code:
-        components.html(st.session_state.html_code, height=750, scrolling=True)
-        st.download_button("⬇️ 下载 HTML", st.session_state.html_code, "demo_prototype.html", "text/html")
-    else:
-        st.info("👈 等待接收需求指令...")
+    st.subheader("🖥️ 3.
 
 
 
