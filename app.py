@@ -168,7 +168,13 @@ with col1:
                     st.error(f"代码生成出错: {e}")
 
 with col2:
-    st.subheader("🖥️ 3.
+    st.subheader("🖥️ 3. 交互 Demo")
+    if st.session_state.html_code:
+        components.html(st.session_state.html_code, height=750, scrolling=True)
+        st.download_button("⬇️ 下载 HTML", st.session_state.html_code, "demo_prototype.html", "text/html")
+    else:
+        st.info("👈 等待接收需求指令...")
+
 
 
 
